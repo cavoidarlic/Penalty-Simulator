@@ -198,6 +198,51 @@
             border-radius: 5px;
             text-align: center;
         }
+        
+        /* GK Skin Button */
+        .gk-skin-button {
+            position: absolute;
+            top: 80px;
+            right: 20px;
+            width: 50px;
+            height: 50px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.9);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            border: 2px solid #444;
+            transition: transform 0.2s;
+        }
+        
+        .gk-skin-button:hover {
+            transform: scale(1.1);
+        }
+        
+        .gk-skin-button-icon {
+            width: 30px;
+            height: 30px;
+            background-color: #d32f2f;
+            clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+        }
+        
+        .gk-skin-panel {
+            position: absolute;
+            right: 20px;
+            top: 140px;
+            width: 320px;
+            max-height: 80vh;
+            overflow-y: auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            z-index: 100;
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -215,6 +260,11 @@
             <div class="skin-button-icon"></div>
         </div>
         
+        <!-- New GK Skin Button -->
+        <div class="gk-skin-button" id="gkSkinButton">
+            <div class="gk-skin-button-icon"></div>
+        </div>
+        
         <div class="skin-panel" id="skinPanel">
             <button class="close-button" id="closeSkinPanel">×</button>
             <h3>Player Skins</h3>
@@ -222,6 +272,18 @@
                 Total Goals: <span id="totalGoals">0</span> | Saves: <span id="totalSaves">0</span>
             </div>
             <div class="skin-grid" id="skinGrid">
+            </div>
+        </div>
+        
+        <!-- GK Skin Panel -->
+        <div class="gk-skin-panel" id="gkSkinPanel">
+            <button class="close-button" id="closeGkSkinPanel">×</button>
+            <h3>Goalkeeper Skins</h3>
+            <div class="stats-display" id="gkStatsDisplay">
+                Total Saves: <span id="totalSavesGk">0</span>
+            </div>
+            <div class="skin-grid" id="gkSkinGrid">
+                <!-- GK Skin items will be added here dynamically -->
             </div>
         </div>
         
@@ -267,13 +329,25 @@
         let playerStats = {
             totalGoals: 0,
             totalSaves: 0,
-            currentSkin: 'default'
+            currentSkin: 'default',
+            currentGkSkin: 'default'
         };
 
         const images = {};
         const imageNames = ['theball', 'thegoal', 'thekeeper', 'thekicker'];
         let imagesLoaded = 0;
 
+        // Goalkeeper skin data with requirements
+        const gkSkins = [
+            { id: 'default', name: 'Andre Onana', file: 'thekeeper.png', requirement: 0, type: 'keeper' },
+            { id: 'allisson', name: 'Allisson', file: 'GKSkin/Allisson.png', requirement: 0, type: 'keeper' },
+            { id: 'courtouis', name: 'Thibaut Courtois', file: 'GKSkin/Courtouis.png', requirement: 3, type: 'keeper' },
+            { id: 'degea', name: 'David De Gea', file: 'GKSkin/David De Gea.png', requirement: 6, type: 'keeper' },
+            { id: 'buffon', name: 'Gianluigi Buffon', file: 'GKSkin/Gianluigi Buffon.png', requirement: 9, type: 'keeper' },
+            { id: 'neuer', name: 'Manuel Neuer', file: 'GKSkin/Manuel Neur.png', requirement: 12, type: 'keeper' },
+            { id: 'szczesny', name: 'Wojciech Szczęsny', file: 'GKSkin/Szczesny.png', requirement: 15, type: 'keeper' }
+        ];
+        
         function loadImages() {
             imageNames.forEach(name => {
                 images[name] = new Image();
@@ -286,11 +360,21 @@
                 images[name].src = `${name}.png`;
             });
             
+            // Load current player skin if different from default
             if (playerStats && playerStats.currentSkin !== 'default') {
                 const selectedSkin = skins.find(skin => skin.id === playerStats.currentSkin);
                 if (selectedSkin) {
                     images.thekicker = new Image();
                     images.thekicker.src = selectedSkin.file;
+                }
+            }
+            
+            // Load current GK skin if different from default
+            if (playerStats && playerStats.currentGkSkin !== 'default') {
+                const selectedGkSkin = gkSkins.find(skin => skin.id === playerStats.currentGkSkin);
+                if (selectedGkSkin) {
+                    images.thekeeper = new Image();
+                    images.thekeeper.src = selectedGkSkin.file;
                 }
             }
         }
@@ -386,10 +470,15 @@
         function updateStatsDisplay() {
             const totalGoalsElement = document.getElementById('totalGoals');
             const totalSavesElement = document.getElementById('totalSaves');
+            const totalSavesGkElement = document.getElementById('totalSavesGk');
             
             if (totalGoalsElement && totalSavesElement) {
                 totalGoalsElement.textContent = playerStats.totalGoals;
                 totalSavesElement.textContent = playerStats.totalSaves;
+            }
+            
+            if (totalSavesGkElement) {
+                totalSavesGkElement.textContent = playerStats.totalSaves;
             }
         }
         
@@ -446,15 +535,76 @@
             }
         }
         
+        function createGkSkinGrid() {
+            const gkSkinGrid = document.getElementById('gkSkinGrid');
+            gkSkinGrid.innerHTML = '';
+            
+            gkSkins.forEach(skin => {
+                const isUnlocked = playerStats.totalSaves >= skin.requirement;
+                const isActive = playerStats.currentGkSkin === skin.id;
+                
+                const skinItem = document.createElement('div');
+                skinItem.className = `skin-item ${isUnlocked ? '' : 'locked'} ${isActive ? 'active' : ''}`;
+                skinItem.dataset.skinId = skin.id;
+                
+                const skinPreview = document.createElement('img');
+                skinPreview.className = 'skin-preview';
+                skinPreview.src = skin.file;
+                skinPreview.alt = skin.name;
+                
+                const skinName = document.createElement('div');
+                skinName.className = 'skin-name';
+                skinName.textContent = skin.name;
+                
+                const skinRequirement = document.createElement('div');
+                skinRequirement.className = 'skin-requirement';
+                skinRequirement.textContent = `Required: ${skin.requirement} saves`;
+                
+                skinItem.appendChild(skinPreview);
+                skinItem.appendChild(skinName);
+                skinItem.appendChild(skinRequirement);
+                
+                if (isUnlocked) {
+                    skinItem.addEventListener('click', () => {
+                        selectGkSkin(skin.id);
+                    });
+                }
+                
+                gkSkinGrid.appendChild(skinItem);
+            });
+        }
+        
+        function selectGkSkin(skinId) {
+            playerStats.currentGkSkin = skinId;
+            savePlayerStats();
+            
+            document.querySelectorAll('#gkSkinGrid .skin-item').forEach(item => {
+                item.classList.toggle('active', item.dataset.skinId === skinId);
+            });
+            
+            const selectedSkin = gkSkins.find(skin => skin.id === skinId);
+            if (selectedSkin) {
+                images.thekeeper = new Image();
+                images.thekeeper.src = selectedSkin.file;
+            }
+        }
+        
         function initSkinSystem() {
             const skinButton = document.getElementById('skinButton');
             const skinPanel = document.getElementById('skinPanel');
             const closeSkinPanel = document.getElementById('closeSkinPanel');
             
+            const gkSkinButton = document.getElementById('gkSkinButton');
+            const gkSkinPanel = document.getElementById('gkSkinPanel');
+            const closeGkSkinPanel = document.getElementById('closeGkSkinPanel');
+            
             if (skinButton && skinPanel && closeSkinPanel) {
                 skinButton.addEventListener('click', () => {
                     const isVisible = skinPanel.style.display === 'block';
                     skinPanel.style.display = isVisible ? 'none' : 'block';
+                    
+                    // Close GK skin panel if open
+                    if (gkSkinPanel) gkSkinPanel.style.display = 'none';
                     
                     if (!isVisible) {
                         createSkinGrid();
@@ -466,6 +616,26 @@
                 });
             } else {
                 console.warn("Skin system UI elements not found!");
+            }
+            
+            if (gkSkinButton && gkSkinPanel && closeGkSkinPanel) {
+                gkSkinButton.addEventListener('click', () => {
+                    const isVisible = gkSkinPanel.style.display === 'block';
+                    gkSkinPanel.style.display = isVisible ? 'none' : 'block';
+                    
+                    // Close player skin panel if open
+                    if (skinPanel) skinPanel.style.display = 'none';
+                    
+                    if (!isVisible) {
+                        createGkSkinGrid();
+                    }
+                });
+                
+                closeGkSkinPanel.addEventListener('click', () => {
+                    gkSkinPanel.style.display = 'none';
+                });
+            } else {
+                console.warn("GK Skin system UI elements not found!");
             }
         }
         
@@ -485,19 +655,23 @@
         }
         
         function kickBall() {
-            const kickerCenterX = kicker.x + kicker.width / 2;
-            const ballCenterX = ball.x + ball.width / 2;
-            const horizontalDirection = (ballCenterX - kickerCenterX) / 100;
-            
-            ballVelocity.x = horizontalDirection * 25;
-            ballVelocity.y = -18;
-            ballInMotion = true;
-            
-            
-            if (Math.random() < 0.15) {
-                ballVelocity.curve = (Math.random() - 0.5) * 0.5;
-            }
+        const kickerCenterX = kicker.x + kicker.width / 2;
+        const ballCenterX = ball.x + ball.width / 2;
+        const horizontalDirection = (ballCenterX - kickerCenterX) / 100;
+        
+        ballVelocity.x = horizontalDirection * 25;
+        ballVelocity.y = -18;
+        ballInMotion = true;
+        
+        if (Math.random() < 0.15) {
+            ballVelocity.curve = (Math.random() - 0.5) * 0.5;
         }
+        
+        if (gameState === 'TEAM_A_KICK' && !keeperHasDived) {
+            console.log('IMMEDIATE REACTION: Keeper diving as ball is kicked!');
+            startKeeperDive();
+        }
+    }
         
         function startKeeperDive() {
             if (keeperHasDived) return;
@@ -509,8 +683,8 @@
             const goalCenterX = sprites.goal.x + sprites.goal.width / 2;
             
             const diveChoice = Math.random();
-            const diveDistance = 80;
-            const diveYOffset = 30;
+            const diveDistance = 270;
+            const diveYOffset = 100;
             
             if (diveChoice < 0.33) {
                 keeper.x -= diveDistance;
@@ -535,36 +709,44 @@
         }
         
         function updateKeeper() {
-            if (!ballInMotion && !keeperHasDived && gameState === 'TEAM_A_KICK') {
-                const goalCenterX = sprites.goal.x + sprites.goal.width / 2 - keeper.width / 2;
-                const distanceFromCenter = keeper.x - goalCenterX;
-                
-                if (Math.abs(distanceFromCenter) < 80) {
-                    keeper.x += keeperAIDirection * keeperAISpeed;
-                } else {
-                    keeperAIDirection = distanceFromCenter > 0 ? -1 : 1;
-                    keeper.x += keeperAIDirection * keeperAISpeed;
-                }
-                
-                if (Math.random() < 0.05) {
-                    keeperAIDirection *= -1;
-                }
-                
-                keeperHopOffset += keeperHopDirection * 0.4;
-                if (keeperHopOffset > 6) {
-                    keeperHopDirection = -1;
-                } else if (keeperHopOffset < -2) {
-                    keeperHopDirection = 1;
-                }
-                keeper.y = keeperOriginalY + keeperHopOffset;
-                
-                const ballMoved = Math.abs(ball.x - ballStartPosition.x) > 0.1 || Math.abs(ball.y - ballStartPosition.y) > 0.1;
-                if (ballMoved && !keeperDiving) {
-                    console.log('Ball moved! AI keeper diving...');
-                    startKeeperDive();
-                }
+        if (!ballInMotion && !keeperHasDived && gameState === 'TEAM_A_KICK') {
+            const goalCenterX = sprites.goal.x + sprites.goal.width / 2 - keeper.width / 2;
+            const distanceFromCenter = keeper.x - goalCenterX;
+            
+            if (Math.abs(distanceFromCenter) < 80) {
+                keeper.x += keeperAIDirection * keeperAISpeed;
+            } else {
+                keeperAIDirection = distanceFromCenter > 0 ? -1 : 1;
+                keeper.x += keeperAIDirection * keeperAISpeed;
+            }
+            
+            if (Math.random() < 0.05) {
+                keeperAIDirection *= -1;
+            }
+            
+            keeperHopOffset += keeperHopDirection * 0.4;
+            if (keeperHopOffset > 6) {
+                keeperHopDirection = -1;
+            } else if (keeperHopOffset < -2) {
+                keeperHopDirection = 1;
+            }
+            keeper.y = keeperOriginalY + keeperHopOffset;
+            
+            // NEW CODE: Check if foot is touching ball - dive immediately
+            if (checkFootCollision(kicker, ball) && !keeperDiving) {
+                console.log('Foot touching ball! AI keeper reacting immediately!');
+                startKeeperDive();
+                return;
+            }
+            
+            // Existing code as fallback
+            const ballMoved = Math.abs(ball.x - ballStartPosition.x) > 0.1 || Math.abs(ball.y - ballStartPosition.y) > 0.1;
+            if (ballMoved && !keeperDiving) {
+                console.log('Ball moved! AI keeper diving...');
+                startKeeperDive();
             }
         }
+    }
         
         function drawSprite(sprite, customImage = null) {
             const img = customImage || images[sprite.image];
@@ -958,6 +1140,7 @@
         }
         
         function checkUnlocks() {
+            // Check player skin unlocks
             const newUnlocks = skins.filter(skin => 
                 playerStats.totalGoals >= skin.requirement && 
                 !localStorage.getItem(`skin_${skin.id}_unlocked`)
@@ -966,7 +1149,20 @@
             if (newUnlocks.length > 0) {
                 newUnlocks.forEach(skin => {
                     localStorage.setItem(`skin_${skin.id}_unlocked`, 'true');
-                    alert(`🎉 New skin unlocked: ${skin.name}! 🎉`);
+                    alert(`🎉 New player skin unlocked: ${skin.name}! 🎉`);
+                });
+            }
+            
+            // Check GK skin unlocks
+            const newGkUnlocks = gkSkins.filter(skin => 
+                playerStats.totalSaves >= skin.requirement && 
+                !localStorage.getItem(`gkskin_${skin.id}_unlocked`)
+            );
+            
+            if (newGkUnlocks.length > 0) {
+                newGkUnlocks.forEach(skin => {
+                    localStorage.setItem(`gkskin_${skin.id}_unlocked`, 'true');
+                    alert(`🎉 New goalkeeper skin unlocked: ${skin.name}! 🎉`);
                 });
             }
         }
