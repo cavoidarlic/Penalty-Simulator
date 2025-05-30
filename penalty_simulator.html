@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Penalty Kick Simulator</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(to bottom, #87CEEB, #90EE90);
+            font-family: Arial, sans-serif;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .game-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .hud {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 10;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 10px;
+            padding: 15px 30px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            text-align: center;
+            min-width: 300px;
+        }
+        
+        .score-board {
+            display: flex;
+            justify-content: space-between;
+            margin: 5px 0;
+            font-size: 28px;
+            font-weight: bold;
+        }
+        
+        .game-info {
+            margin: 5px 0;
+            font-size: 20px;
+            min-height: 30px;
+        }
+        
+        .instructions {
+            margin: 5px 0;
+            font-size: 16px;
+            color: #666;
+        }
+        
+        #gameCanvas {
+            width: 100%;
+            height: 100%;
+            cursor: crosshair;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <div class="hud">
+            <div class="score-board">
+                <div>Team A: <span id="scoreA">0</span></div>
+                <div>Team B: <span id="scoreB">0</span></div>
+            </div>
+            <div class="game-info" id="gameInfo">Team A's turn to kick!</div>
+            <div class="instructions" id="instructions">Loading sprites...</div>
+        </div>
+        <canvas id="gameCanvas"></canvas>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        let scaleX = 1;
+        let scaleY = 1;
+        let baseWidth = 800;
+        let baseHeight = 600;
+        
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            
+            scaleX = canvas.width / baseWidth;
+            scaleY = canvas.height / baseHeight;
+            
+            updateSpritePositions();
+        }
+        
+        function updateSpritePositions() {
+            Object.keys(sprites).forEach(key => {
+                sprites[key].x = sprites[key].baseX * scaleX;
+                sprites[key].y = sprites[key].baseY * scaleY;
+                sprites[key].width = sprites[key].baseWidth * scaleX;
+                sprites[key].height = sprites[key].baseHeight * scaleY;
+                sprites[key].scaledHitboxWidth = sprites[key].hitboxWidth * scaleX;
+                sprites[key].scaledHitboxHeight = sprites[key].hitboxHeight * scaleY;
+                sprites[key].scaledHitboxOffsetX = sprites[key].hitboxOffsetX * scaleX;
+                sprites[key].scaledHitboxOffsetY = sprites[key].hitboxOffsetY * scaleY;
+            });
+            
+            ball = { ...sprites.ball };
+            keeper = { ...sprites.keeper };
+            kicker = { ...sprites.kicker };
+        }
+        
+        const images = {};
+        const imageNames = ['theball', 'thegoal', 'thekeeper', 'thekicker'];
+        let imagesLoaded = 0;
+        
+        function loadImages() {
+            imageNames.forEach(name => {
+                images[name] = new Image();
+                images[name].onload = () => {
+                    imagesLoaded++;
+                    if (imagesLoaded === imageNames.length) {
+                        initGame();
+                    }
+                };
+                images[name].src = `${name}.png`;
+            });
+        }
+        
+        let gameState = 'TEAM_A_KICK';
+        let scoreA = 0;
+        let scoreB = 0;
+        let round = 1;
+        const maxRounds = 5;
+        
+        const sprites = {
+            ball: { 
+                baseX: 400, baseY: 500, baseWidth: 35, baseHeight: 48,
+                x: 400, y: 500, width: 35, height: 48, image: 'theball',
+                hitboxWidth: 35, hitboxHeight: 48, hitboxOffsetX: 0, hitboxOffsetY: 0
+            },
+            goal: { 
+                baseX: 200, baseY: 80, baseWidth: 400, baseHeight: 199,
+                x: 200, y: 80, width: 400, height: 199, image: 'thegoal',
+                hitboxWidth: 350, hitboxHeight: 150, hitboxOffsetX: 25, hitboxOffsetY: 25
+            },
+            keeper: { 
+                baseX: 300, baseY: 90, baseWidth: 200, baseHeight: 200,
+                x: 300, y: 90, width: 200, height: 200, image: 'thekeeper',
+                hitboxWidth: 70, hitboxHeight: 150, hitboxOffsetX: 68, hitboxOffsetY: 40
+            },
+            kicker: { 
+                baseX: 200, baseY: 450, baseWidth: 200, baseHeight: 517,
+                x: 200, y: 450, width: 200, height: 517, image: 'thekicker',
+                hitboxWidth: 200, hitboxHeight: 517, hitboxOffsetX: 0, hitboxOffsetY: 0
+            }
+        };
+        
+        let ball = { ...sprites.ball };
+        let keeper = { ...sprites.keeper };
+        let kicker = { ...sprites.kicker };
+        
+        let ballVelocity = { x: 0, y: 0 };
+        let isDragging = false;
+        let dragStart = { x: 0, y: 0 };
+        let dragObject = null;
+        let ballInMotion = false;
+        let kickTimer = 0;
+        let gkTimer = 0;
+        let keeperDiving = false;
+        let keeperDiveDirection = { x: 0, y: 0 };
+        let keeperDiveSpeed = 8;
+        let keeperDiveTarget = { x: 0, y: 0 };
+        let keeperDiveStartY = 0;
+        let keeperJumpHeight = 40;
+        let keeperHasDived = false;
+        let playerKeeperStartY = 0;
+        let diveThreshold = 25;
+        let showHitboxes = false;
+        let keeperAIDirection = 1;
+        let keeperAISpeed = 1.5;
+        let ballStartPosition = { x: 0, y: 0 };
+        let keeperHopOffset = 0;
+        let keeperHopDirection = 1;
+        let keeperOriginalY = 0;
+        let keeperRotation = 0;
+        
+        function checkFootCollision(kickerSprite, ballSprite) {
+            const footCenterX = kickerSprite.x + kickerSprite.width / 2;
+            const footCenterY = kickerSprite.y + kickerSprite.height * 0.9;
+            const footRadius = kickerSprite.width * 0.2;
+            
+            const ballCenterX = ballSprite.x + ballSprite.width / 2;
+            const ballCenterY = ballSprite.y + ballSprite.height / 2;
+            
+            const distanceX = footCenterX - ballCenterX;
+            const distanceY = footCenterY - ballCenterY;
+            const distance = Math.sqrt(distanceX * distanceX + distanceY * distanceY);
+            
+            return distance < footRadius;
+        }
+        
+        function kickBall() {
+            const kickerCenterX = kicker.x + kicker.width / 2;
+            const ballCenterX = ball.x + ball.width / 2;
+            const horizontalDirection = (ballCenterX - kickerCenterX) / 100;
+            
+            ballVelocity.x = horizontalDirection * 25;
+            ballVelocity.y = -18;
+            ballInMotion = true;
+            
+            
+            if (Math.random() < 0.15) {
+                ballVelocity.curve = (Math.random() - 0.5) * 0.5;
+            }
+        }
+        
+        function startKeeperDive() {
+            if (keeperHasDived) return;
+            
+            keeperDiving = true;
+            keeperHasDived = true;
+            
+            const ballCenterX = ball.x + ball.width / 2;
+            const goalCenterX = sprites.goal.x + sprites.goal.width / 2;
+            
+            const diveChoice = Math.random();
+            const diveDistance = 80;
+            const diveYOffset = 30;
+            
+            if (diveChoice < 0.33) {
+                keeper.x -= diveDistance;
+                keeper.y += diveYOffset;
+                keeperRotation = -Math.PI / 2;
+                console.log('Keeper diving LEFT!');
+            } else if (diveChoice < 0.66) {
+                keeper.y += diveYOffset / 2;
+                keeperRotation = 0;
+                console.log('Keeper staying CENTER!');
+            } else {
+                keeper.x += diveDistance;
+                keeper.y += diveYOffset;
+                keeperRotation = Math.PI / 2;
+                console.log('Keeper diving RIGHT!');
+            }
+            
+            keeper.x = Math.max(sprites.goal.x - 100, Math.min(keeper.x, sprites.goal.x + sprites.goal.width - keeper.width + 100));
+            keeper.y = Math.max(sprites.goal.y, Math.min(keeper.y, sprites.goal.y + sprites.goal.height + 50));
+            
+            console.log(`Keeper action! New position X: ${keeper.x}, Y: ${keeper.y}`);
+        }
+        
+        function updateKeeper() {
+            if (!ballInMotion && !keeperHasDived && gameState === 'TEAM_A_KICK') {
+                const goalCenterX = sprites.goal.x + sprites.goal.width / 2 - keeper.width / 2;
+                const distanceFromCenter = keeper.x - goalCenterX;
+                
+                if (Math.abs(distanceFromCenter) < 80) {
+                    keeper.x += keeperAIDirection * keeperAISpeed;
+                } else {
+                    keeperAIDirection = distanceFromCenter > 0 ? -1 : 1;
+                    keeper.x += keeperAIDirection * keeperAISpeed;
+                }
+                
+                if (Math.random() < 0.05) {
+                    keeperAIDirection *= -1;
+                }
+                
+                keeperHopOffset += keeperHopDirection * 0.4;
+                if (keeperHopOffset > 6) {
+                    keeperHopDirection = -1;
+                } else if (keeperHopOffset < -2) {
+                    keeperHopDirection = 1;
+                }
+                keeper.y = keeperOriginalY + keeperHopOffset;
+                
+                const ballMoved = Math.abs(ball.x - ballStartPosition.x) > 0.1 || Math.abs(ball.y - ballStartPosition.y) > 0.1;
+                if (ballMoved && !keeperDiving) {
+                    console.log('Ball moved! AI keeper diving...');
+                    startKeeperDive();
+                }
+            }
+        }
+        
+        function drawSprite(sprite, customImage = null) {
+            const img = customImage || images[sprite.image];
+            if (img && img.complete) {
+                if (sprite === keeper && keeperDiving && keeperRotation !== 0) {
+                    ctx.save();
+                    const centerX = sprite.x + sprite.width / 2;
+                    const centerY = sprite.y + sprite.height / 2;
+                    ctx.translate(centerX, centerY);
+                    ctx.rotate(keeperRotation);
+                    ctx.drawImage(img, -sprite.width / 2, -sprite.height / 2, sprite.width, sprite.height);
+                    ctx.restore();
+                } else {
+                    ctx.drawImage(img, sprite.x, sprite.y, sprite.width, sprite.height);
+                }
+            } else {
+                ctx.fillStyle = sprite.image === 'theball' ? '#000' : 
+                               sprite.image === 'thekeeper' ? '#FF0000' : 
+                               sprite.image === 'thekicker' ? '#0000FF' : '#FFF';
+                
+                if (sprite === keeper && keeperDiving && keeperRotation !== 0) {
+                    ctx.save();
+                    const centerX = sprite.x + sprite.width / 2;
+                    const centerY = sprite.y + sprite.height / 2;
+                    ctx.translate(centerX, centerY);
+                    ctx.rotate(keeperRotation);
+                    ctx.fillRect(-sprite.width / 2, -sprite.height / 2, sprite.width, sprite.height);
+                    ctx.strokeStyle = '#000';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(-sprite.width / 2, -sprite.height / 2, sprite.width, sprite.height);
+                    ctx.restore();
+                } else {
+                    ctx.fillRect(sprite.x, sprite.y, sprite.width, sprite.height);
+                    ctx.strokeStyle = '#000';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(sprite.x, sprite.y, sprite.width, sprite.height);
+                }
+            }
+        }
+        
+        function drawGoal() {
+            if (images.thegoal && images.thegoal.complete) {
+                ctx.drawImage(images.thegoal, sprites.goal.x, sprites.goal.y, sprites.goal.width, sprites.goal.height);
+            } else {
+                ctx.fillStyle = '#FFF';
+                ctx.fillRect(sprites.goal.x, sprites.goal.y, sprites.goal.width, sprites.goal.height);
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 5;
+                ctx.strokeRect(sprites.goal.x, sprites.goal.y, sprites.goal.width, sprites.goal.height);
+                
+                ctx.fillStyle = '#FFF';
+                ctx.fillRect(sprites.goal.x - 10, sprites.goal.y, 10, sprites.goal.height);
+                ctx.fillRect(sprites.goal.x + sprites.goal.width, sprites.goal.y, 10, sprites.goal.height);
+                ctx.fillRect(sprites.goal.x - 10, sprites.goal.y - 10, sprites.goal.width + 20, 10);
+            }
+        }
+        
+        function checkGoal() {
+            const goalHitboxX = sprites.goal.x + sprites.goal.scaledHitboxOffsetX;
+            const goalHitboxY = sprites.goal.y + sprites.goal.scaledHitboxOffsetY;
+            
+            return ball.x + ball.width > goalHitboxX && 
+                   ball.x < goalHitboxX + sprites.goal.scaledHitboxWidth &&
+                   ball.y + ball.height > goalHitboxY && 
+                   ball.y < goalHitboxY + sprites.goal.scaledHitboxHeight;
+        }
+        
+        function checkCollision(obj1, obj2) {
+            let obj1X = obj1.x, obj1Y = obj1.y, obj1W = obj1.width, obj1H = obj1.height;
+            let obj2X = obj2.x, obj2Y = obj2.y, obj2W = obj2.width, obj2H = obj2.height;
+            
+            if (obj2 === keeper) {
+                obj2X += sprites.keeper.scaledHitboxOffsetX;
+                obj2Y += sprites.keeper.scaledHitboxOffsetY;
+                obj2W = sprites.keeper.scaledHitboxWidth;
+                obj2H = sprites.keeper.scaledHitboxHeight;
+            }
+            
+            return obj1X < obj2X + obj2W &&
+                   obj1X + obj1W > obj2X &&
+                   obj1Y < obj2Y + obj2H &&
+                   obj1Y + obj1H > obj2Y;
+        }
+        
+        function drawHitboxes() {
+            ctx.save();
+            ctx.lineWidth = 2;
+            
+            ctx.strokeStyle = '#00FF00';
+            ctx.strokeRect(ball.x, ball.y, ball.width, ball.height);
+            ctx.fillStyle = 'rgba(0, 255, 0, 0.1)';
+            ctx.fillRect(ball.x, ball.y, ball.width, ball.height);
+            
+            const goalHitboxX = sprites.goal.x + sprites.goal.scaledHitboxOffsetX;
+            const goalHitboxY = sprites.goal.y + sprites.goal.scaledHitboxOffsetY;
+            ctx.strokeStyle = '#0000FF';
+            ctx.strokeRect(goalHitboxX, goalHitboxY, sprites.goal.scaledHitboxWidth, sprites.goal.scaledHitboxHeight);
+            ctx.fillStyle = 'rgba(0, 0, 255, 0.1)';
+            ctx.fillRect(goalHitboxX, goalHitboxY, sprites.goal.scaledHitboxWidth, sprites.goal.scaledHitboxHeight);
+            
+            const keeperHitboxX = keeper.x + sprites.keeper.scaledHitboxOffsetX;
+            const keeperHitboxY = keeper.y + sprites.keeper.scaledHitboxOffsetY;
+            ctx.strokeStyle = '#FF0000';
+            ctx.strokeRect(keeperHitboxX, keeperHitboxY, sprites.keeper.scaledHitboxWidth, sprites.keeper.scaledHitboxHeight);
+            ctx.fillStyle = 'rgba(255, 0, 0, 0.1)';
+            ctx.fillRect(keeperHitboxX, keeperHitboxY, sprites.keeper.scaledHitboxWidth, sprites.keeper.scaledHitboxHeight);
+            
+            if (!ballInMotion) {
+                ctx.strokeStyle = '#FFFF00';
+                ctx.strokeRect(kicker.x, kicker.y, kicker.width, kicker.height);
+                ctx.fillStyle = 'rgba(255, 255, 0, 0.1)';
+                ctx.fillRect(kicker.x, kicker.y, kicker.width, kicker.height);
+                
+                const footCenterX = kicker.x + kicker.width / 2;
+                const footCenterY = kicker.y + kicker.height * 0.9;
+                const footRadius = kicker.width * 0.2;
+                
+                ctx.strokeStyle = '#FF8800';
+                ctx.beginPath();
+                ctx.arc(footCenterX, footCenterY, footRadius, 0, 2 * Math.PI);
+                ctx.stroke();
+                ctx.fillStyle = 'rgba(255, 136, 0, 0.2)';
+                ctx.fill();
+                
+                const kickerCenterX = kicker.x + kicker.width / 2;
+                const ballCenterX = ball.x + ball.width / 2;
+                const kickDirection = ballCenterX - kickerCenterX;
+                
+                if (Math.abs(kickDirection) > 10) {
+                    ctx.strokeStyle = kickDirection < 0 ? '#FF0000' : '#00FF00';
+                    ctx.lineWidth = 4;
+                    ctx.beginPath();
+                    const arrowStartX = ball.x + ball.width / 2;
+                    const arrowStartY = ball.y;
+                    const arrowLength = 80;
+                    const arrowEndX = arrowStartX + (kickDirection > 0 ? arrowLength : -arrowLength);
+                    const arrowEndY = arrowStartY - 60;
+                    
+                    ctx.moveTo(arrowStartX, arrowStartY);
+                    ctx.lineTo(arrowEndX, arrowEndY);
+                    ctx.stroke();
+                    
+                    const headSize = 15;
+                    ctx.beginPath();
+                    if (kickDirection > 0) {
+                        ctx.moveTo(arrowEndX, arrowEndY);
+                        ctx.lineTo(arrowEndX - headSize, arrowEndY - headSize);
+                        ctx.moveTo(arrowEndX, arrowEndY);
+                        ctx.lineTo(arrowEndX - headSize, arrowEndY + headSize);
+                    } else {
+                        ctx.moveTo(arrowEndX, arrowEndY);
+                        ctx.lineTo(arrowEndX + headSize, arrowEndY - headSize);
+                        ctx.moveTo(arrowEndX, arrowEndY);
+                        ctx.lineTo(arrowEndX + headSize, arrowEndY + headSize);
+                    }
+                    ctx.stroke();
+                    
+                    ctx.fillStyle = kickDirection < 0 ? '#FF0000' : '#00FF00';
+                    ctx.font = '16px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(kickDirection > 0 ? 'KICK RIGHT' : 'KICK LEFT', arrowEndX, arrowEndY - 20);
+                }
+            }
+            
+            ctx.restore();
+        }
+        
+        function drawBallShadow() {
+            ctx.save();
+            
+            const shadowOffsetX = ball.x + ball.width / 2;
+            const shadowOffsetY = ball.y + ball.height + 0;
+            const shadowWidth = ball.width * 0.8;
+            const shadowHeight = ball.height * 0.3;
+            
+            const gradient = ctx.createRadialGradient(
+                shadowOffsetX, shadowOffsetY, 0,
+                shadowOffsetX, shadowOffsetY, shadowWidth / 2
+            );
+            gradient.addColorStop(0, 'rgba(0, 0, 0, 0.4)');
+            gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            
+            ctx.fillStyle = gradient;
+            
+            ctx.beginPath();
+            ctx.ellipse(
+                shadowOffsetX, 
+                shadowOffsetY, 
+                shadowWidth / 2, 
+                shadowHeight / 2, 
+                0, 0, 2 * Math.PI
+            );
+            ctx.fill();
+            
+            ctx.restore();
+        }
+        
+        function draw() {
+            ctx.fillStyle = '#228B22';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            const penaltyBoxWidth = 800 * scaleX;
+            const penaltyBoxHeight = 150 * scaleY;
+            const penaltyBoxX = (canvas.width - penaltyBoxWidth) / 2;
+            const penaltyBoxY = 270 * scaleY;
+            
+            ctx.strokeStyle = '#FFF';
+            ctx.lineWidth = 6 * Math.min(scaleX, scaleY);
+            ctx.strokeRect(penaltyBoxX, penaltyBoxY, penaltyBoxWidth, penaltyBoxHeight);
+            
+            drawGoal();
+            
+            drawBallShadow();
+            
+            drawSprite(ball);
+            
+            drawSprite(keeper);
+            
+            if (!ballInMotion) {
+                drawSprite(kicker);
+            }
+            
+            if (showHitboxes) {
+                drawHitboxes();
+            }
+        }
+        
+        function updateGameInfo() {
+            const info = document.getElementById('gameInfo');
+            const instructions = document.getElementById('instructions');
+            
+            switch(gameState) {
+                case 'TEAM_A_KICK':
+                    info.textContent = `Round ${round} - Your turn to kick! (vs AI Goalkeeper)`;
+                    instructions.textContent = 'Drag kicker LEFT of ball = kick RIGHT, RIGHT of ball = kick LEFT';
+                    break;
+                case 'TEAM_A_GK':
+                    info.textContent = `Round ${round} - Your turn to defend! (vs AI Kicker)`;
+                    instructions.textContent = 'Drag keeper DOWN to dive! Position LEFT/CENTER/RIGHT first!';
+                    break;
+                case 'TEAM_B_KICK':
+                    info.textContent = `Round ${round} - Unused state`;
+                    instructions.textContent = 'This should not appear';
+                    break;
+                case 'TEAM_B_GK':
+                    info.textContent = `Round ${round} - Unused state`;
+                    instructions.textContent = 'This should not appear';
+                    break;
+                case 'GAME_OVER':
+                    const winner = scoreA > scoreB ? 'You' : scoreB > scoreA ? 'AI' : 'Nobody';
+                    info.textContent = `Game Over! ${winner} wins!`;
+                    instructions.textContent = 'Refresh to play again!';
+                    break;
+            }
+        }
+        
+        function initGame() {
+            resizeCanvas();
+            document.getElementById('instructions').textContent = 'Drag the kicker to the ball to shoot!';
+            updateGameInfo();
+            ballStartPosition = { x: sprites.ball.x, y: sprites.ball.y };
+            keeperOriginalY = sprites.keeper.y;
+            gameLoop();
+        }
+        
+        function resetPositions() {
+            ball = { ...sprites.ball };
+            keeper = { ...sprites.keeper };
+            kicker = { ...sprites.kicker };
+            ballVelocity = { x: 0, y: 0 };
+            ballInMotion = false;
+            kickTimer = 0;
+            gkTimer = 0;
+            keeperDiving = false;
+            keeperDiveDirection = { x: 0, y: 0 };
+            keeperHasDived = false;
+            playerKeeperStartY = keeper.y;
+            keeperAIDirection = Math.random() > 0.5 ? 1 : -1;
+            ballStartPosition = { x: ball.x, y: ball.y };
+            keeperHopOffset = 0;
+            keeperOriginalY = keeper.y;
+            keeperRotation = 0;
+        }
+        
+        function nextTurn() {
+            setTimeout(() => {
+                switch(gameState) {
+                    case 'TEAM_A_KICK':
+                        gameState = 'TEAM_A_GK';
+                        break;
+                    case 'TEAM_A_GK':
+                        round++;
+                        if (round > maxRounds) {
+                            gameState = 'GAME_OVER';
+                        } else {
+                            gameState = 'TEAM_A_KICK';
+                        }
+                        break;
+                }
+                resetPositions();
+                updateGameInfo();
+            }, 2000);
+        }
+        
+        function simulateKick() {
+            const angle = (Math.random() - 0.5) * 3.0;
+            const power = (12 + Math.random() * 6) * Math.min(scaleX, scaleY);
+            
+            ballVelocity.x = Math.sin(angle) * power;
+            ballVelocity.y = -power;
+            ballInMotion = true;
+            
+            
+            if (Math.random() < 0.1) {
+                ballVelocity.curve = (Math.random() - 0.5) * 0.5;
+            }
+        }
+        
+        function updateBall() {
+            if (!ballInMotion) return;
+            
+            ball.x += ballVelocity.x;
+            ball.y += ballVelocity.y;
+            
+            if (ballVelocity.curve) {
+                ballVelocity.x += ballVelocity.curve;
+            }
+            
+            if (!keeperHasDived && gameState === 'TEAM_A_GK') {
+                const ballToGoalDistance = ball.y - (sprites.goal.y + sprites.goal.height);
+                if (ballToGoalDistance < 150) {
+                    keeperDiving = true;
+                    keeperHasDived = true;
+                    keeperRotation = 0;
+                    console.log('Emergency dive! Player waited too long.');
+                }
+            }
+            
+            if (checkGoal()) {
+                ballInMotion = false;
+                if (gameState === 'TEAM_A_KICK') {
+                    scoreA++;
+                    document.getElementById('scoreA').textContent = scoreA;
+                    console.log('Player scored!');
+                } else if (gameState === 'TEAM_A_GK') {
+                    scoreB++;
+                    document.getElementById('scoreB').textContent = scoreB;
+                    console.log('AI scored!');
+                }
+                nextTurn();
+                return;
+            }
+            
+            if (checkCollision(ball, keeper)) {
+                ballInMotion = false;
+                console.log('Goalkeeper saved the ball!');
+                nextTurn();
+                return;
+            }
+            
+            if (ball.x < 0 || ball.x > canvas.width - ball.width || 
+                ball.y < 0 || ball.y > canvas.height - ball.height) {
+                ballInMotion = false;
+                console.log('Ball went out of bounds!');
+                nextTurn();
+            }
+        }
+        
+        function gameLoop() {
+            if (gameState === 'TEAM_A_GK' && !ballInMotion) {
+                gkTimer++;
+                if (gkTimer > 300) {
+                    simulateKick();
+                    gkTimer = 0;
+                }
+            }
+            
+            updateBall();
+            updateKeeper();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+        
+        canvas.addEventListener('mousedown', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+            
+            if (ballInMotion) return;
+            
+            if (gameState === 'TEAM_A_KICK') {
+                if (mouseX >= kicker.x && mouseX <= kicker.x + kicker.width &&
+                    mouseY >= kicker.y && mouseY <= kicker.y + kicker.height) {
+                    isDragging = true;
+                    dragObject = 'kicker';
+                    dragStart = { x: mouseX, y: mouseY };
+                }
+            } else if (gameState === 'TEAM_A_GK') {
+                if (mouseX >= keeper.x && mouseX <= keeper.x + keeper.width &&
+                    mouseY >= keeper.y && mouseY <= keeper.y + keeper.height) {
+                    isDragging = true;
+                    dragObject = 'keeper';
+                    dragStart = { x: mouseX, y: mouseY };
+                    playerKeeperStartY = keeper.y;
+                }
+            }
+        });
+        
+        canvas.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+            
+            if (dragObject === 'kicker') {
+                kicker.x = mouseX - kicker.width / 2;
+                kicker.y = mouseY - kicker.height / 2;
+                
+                if (!ballInMotion && checkFootCollision(kicker, ball)) {
+                    kickBall();
+                    kicker.x = sprites.kicker.x;
+                    kicker.y = sprites.kicker.y;
+                    isDragging = false;
+                    dragObject = null;
+                }
+            } else if (dragObject === 'keeper') {
+                const prevY = keeper.y;
+                
+                const minX = sprites.goal.x - 150;
+                const maxX = sprites.goal.x + sprites.goal.width + 150 - keeper.width;
+                const minY = sprites.goal.y - 100;
+                const maxY = sprites.goal.y + sprites.goal.height + 100 - keeper.height;
+                
+                keeper.x = Math.max(minX, Math.min(mouseX - keeper.width / 2, maxX));
+                keeper.y = Math.max(minY, Math.min(mouseY - keeper.height / 2, maxY));
+                
+                if (!keeperHasDived && gameState === 'TEAM_A_GK') {
+                    const yMovement = keeper.y - playerKeeperStartY;
+                    console.log(`Y Movement: ${yMovement}, Threshold: ${diveThreshold}`);
+                    
+                    if (yMovement > diveThreshold) {
+                        keeperDiving = true;
+                        keeperHasDived = true;
+                        
+                        const goalCenterX = sprites.goal.x + sprites.goal.width / 2;
+                        const keeperCenterX = keeper.x + keeper.width / 2;
+                        
+                        if (keeperCenterX < goalCenterX - 30) {
+                            keeperRotation = -Math.PI / 2;
+                            console.log('Player keeper diving LEFT!');
+                        } else if (keeperCenterX > goalCenterX + 30) {
+                            keeperRotation = Math.PI / 2;
+                            console.log('Player keeper diving RIGHT!');
+                        } else {
+                            keeperRotation = 0;
+                            console.log('Player keeper diving CENTER!');
+                        }
+                    }
+                }
+            }
+        });
+        
+        canvas.addEventListener('mouseup', (e) => {
+            if (!isDragging) return;
+            
+            if (dragObject === 'kicker') {
+                kicker.x = sprites.kicker.x;
+                kicker.y = sprites.kicker.y;
+            } else if (dragObject === 'keeper') {
+                keeper.x = sprites.keeper.x;
+                keeper.y = sprites.keeper.y;
+            }
+            
+            isDragging = false;
+            dragObject = null;
+        });
+        
+        window.addEventListener('resize', resizeCanvas);
+        
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'h' || e.key === 'H') {
+                showHitboxes = !showHitboxes;
+                console.log('Hitboxes:', showHitboxes ? 'ON' : 'OFF');
+            }
+        });
+        
+        loadImages();
+    </script>
+</body>
+</html>
