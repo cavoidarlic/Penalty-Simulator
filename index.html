@@ -62,6 +62,142 @@
             cursor: crosshair;
             display: block;
         }
+        
+        .skin-button {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 50px;
+            height: 50px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.9);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            border: 2px solid #444;
+            transition: transform 0.2s;
+        }
+        
+        .skin-button:hover {
+            transform: scale(1.1);
+        }
+        
+        .skin-button-icon {
+            width: 30px;
+            height: 30px;
+            background-color: #555;
+            clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+        }
+        
+        .skin-panel {
+            position: absolute;
+            right: 20px;
+            top: 80px;
+            width: 320px;
+            max-height: 80vh;
+            overflow-y: auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            z-index: 100;
+            display: none;
+        }
+        
+        .skin-panel h3 {
+            margin-top: 0;
+            text-align: center;
+            color: #444;
+            border-bottom: 2px solid #ccc;
+            padding-bottom: 10px;
+        }
+        
+        .skin-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+        }
+        
+        .skin-item {
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: relative;
+            transition: transform 0.2s;
+        }
+        
+        .skin-item:hover {
+            transform: scale(1.03);
+        }
+        
+        .skin-item.active {
+            border-color: #4CAF50;
+            background-color: rgba(76, 175, 80, 0.1);
+        }
+        
+        .skin-item.locked {
+            opacity: 0.7;
+        }
+        
+        .skin-item.locked::after {
+            content: '🔒';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 30px;
+            color: #ff5722;
+        }
+        
+        .skin-preview {
+            width: 100px;
+            height: 100px;
+            object-fit: contain;
+            margin-bottom: 5px;
+            background-color: #f5f5f5;
+            border-radius: 5px;
+        }
+        
+        .skin-name {
+            font-weight: bold;
+            text-align: center;
+            margin: 5px 0;
+        }
+        
+        .skin-requirement {
+            font-size: 12px;
+            color: #666;
+            text-align: center;
+        }
+        
+        .close-button {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: none;
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+            color: #666;
+        }
+        
+        .close-button:hover {
+            color: #000;
+        }
+        
+        .stats-display {
+            margin-bottom: 15px;
+            padding: 10px;
+            background-color: #f5f5f5;
+            border-radius: 5px;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
@@ -74,6 +210,21 @@
             <div class="game-info" id="gameInfo">Team A's turn to kick!</div>
             <div class="instructions" id="instructions">Loading sprites...</div>
         </div>
+        
+        <div class="skin-button" id="skinButton">
+            <div class="skin-button-icon"></div>
+        </div>
+        
+        <div class="skin-panel" id="skinPanel">
+            <button class="close-button" id="closeSkinPanel">×</button>
+            <h3>Player Skins</h3>
+            <div class="stats-display" id="statsDisplay">
+                Total Goals: <span id="totalGoals">0</span> | Saves: <span id="totalSaves">0</span>
+            </div>
+            <div class="skin-grid" id="skinGrid">
+            </div>
+        </div>
+        
         <canvas id="gameCanvas"></canvas>
     </div>
 
@@ -113,10 +264,16 @@
             kicker = { ...sprites.kicker };
         }
         
+        let playerStats = {
+            totalGoals: 0,
+            totalSaves: 0,
+            currentSkin: 'default'
+        };
+
         const images = {};
         const imageNames = ['theball', 'thegoal', 'thekeeper', 'thekicker'];
         let imagesLoaded = 0;
-        
+
         function loadImages() {
             imageNames.forEach(name => {
                 images[name] = new Image();
@@ -128,6 +285,14 @@
                 };
                 images[name].src = `${name}.png`;
             });
+            
+            if (playerStats && playerStats.currentSkin !== 'default') {
+                const selectedSkin = skins.find(skin => skin.id === playerStats.currentSkin);
+                if (selectedSkin) {
+                    images.thekicker = new Image();
+                    images.thekicker.src = selectedSkin.file;
+                }
+            }
         }
         
         let gameState = 'TEAM_A_KICK';
@@ -187,6 +352,122 @@
         let keeperHopDirection = 1;
         let keeperOriginalY = 0;
         let keeperRotation = 0;
+        
+        const skins = [
+            { id: 'default', name: 'Kylian Mbappé', file: 'thekicker.png', requirement: 0, type: 'kicker' },
+            { id: 'ronaldo', name: 'Cristiano Ronaldo', file: 'Skin/Ronaldo.png', requirement: 0, type: 'kicker' },
+            { id: 'yamal', name: 'Lamine Yamal', file: 'Skin/yamal.png', requirement: 0, type: 'kicker' },
+            { id: 'haaland', name: 'Erling Haaland', file: 'Skin/Erling Haaland.png', requirement: 5, type: 'kicker' },
+            { id: 'salah', name: 'Mohamed Salah', file: 'Skin/mohamed salah.png', requirement: 10, type: 'kicker' },
+            { id: 'fernandes', name: 'Bruno Fernandes', file: 'Skin/Bruno Fernandes.png', requirement: 15, type: 'kicker' },
+            { id: 'lewandowski', name: 'Robert Lewandowski', file: 'Skin/robert lewandowski.png', requirement: 20, type: 'kicker' },
+            { id: 'kane', name: 'Harry Kane', file: 'Skin/harry kane.png', requirement: 25, type: 'kicker' },
+            { id: 'neymar', name: 'Neymar Jr.', file: 'Skin/neymar.png', requirement: 30, type: 'kicker' },
+            { id: 'messi', name: 'Lionel Messi', file: 'Skin/Lionel Messi.png', requirement: 35, type: 'kicker' }
+        ];
+        
+        function loadPlayerStats() {
+            const savedStats = localStorage.getItem('penaltyKickStats');
+            if (savedStats) {
+                try {
+                    playerStats = JSON.parse(savedStats);
+                } catch (e) {
+                    console.error("Error parsing saved stats:", e);
+                }
+            }
+            updateStatsDisplay();
+        }
+        
+        function savePlayerStats() {
+            localStorage.setItem('penaltyKickStats', JSON.stringify(playerStats));
+            updateStatsDisplay();
+        }
+        
+        function updateStatsDisplay() {
+            const totalGoalsElement = document.getElementById('totalGoals');
+            const totalSavesElement = document.getElementById('totalSaves');
+            
+            if (totalGoalsElement && totalSavesElement) {
+                totalGoalsElement.textContent = playerStats.totalGoals;
+                totalSavesElement.textContent = playerStats.totalSaves;
+            }
+        }
+        
+        function createSkinGrid() {
+            skinGrid.innerHTML = '';
+            
+            skins.forEach(skin => {
+                const isUnlocked = playerStats.totalGoals >= skin.requirement;
+                const isActive = playerStats.currentSkin === skin.id;
+                
+                const skinItem = document.createElement('div');
+                skinItem.className = `skin-item ${isUnlocked ? '' : 'locked'} ${isActive ? 'active' : ''}`;
+                skinItem.dataset.skinId = skin.id;
+                
+                const skinPreview = document.createElement('img');
+                skinPreview.className = 'skin-preview';
+                skinPreview.src = skin.file;
+                skinPreview.alt = skin.name;
+                
+                const skinName = document.createElement('div');
+                skinName.className = 'skin-name';
+                skinName.textContent = skin.name;
+                
+                const skinRequirement = document.createElement('div');
+                skinRequirement.className = 'skin-requirement';
+                skinRequirement.textContent = `Required: ${skin.requirement} goals`;
+                
+                skinItem.appendChild(skinPreview);
+                skinItem.appendChild(skinName);
+                skinItem.appendChild(skinRequirement);
+                
+                if (isUnlocked) {
+                    skinItem.addEventListener('click', () => {
+                        selectSkin(skin.id);
+                    });
+                }
+                
+                skinGrid.appendChild(skinItem);
+            });
+        }
+        
+        function selectSkin(skinId) {
+            playerStats.currentSkin = skinId;
+            savePlayerStats();
+            
+            document.querySelectorAll('.skin-item').forEach(item => {
+                item.classList.toggle('active', item.dataset.skinId === skinId);
+            });
+            
+            const selectedSkin = skins.find(skin => skin.id === skinId);
+            if (selectedSkin) {
+                images.thekicker = new Image();
+                images.thekicker.src = selectedSkin.file;
+            }
+        }
+        
+        function initSkinSystem() {
+            const skinButton = document.getElementById('skinButton');
+            const skinPanel = document.getElementById('skinPanel');
+            const closeSkinPanel = document.getElementById('closeSkinPanel');
+            
+            if (skinButton && skinPanel && closeSkinPanel) {
+                skinButton.addEventListener('click', () => {
+                    const isVisible = skinPanel.style.display === 'block';
+                    skinPanel.style.display = isVisible ? 'none' : 'block';
+                    
+                    if (!isVisible) {
+                        createSkinGrid();
+                    }
+                });
+                
+                closeSkinPanel.addEventListener('click', () => {
+                    skinPanel.style.display = 'none';
+                });
+            } else {
+                console.warn("Skin system UI elements not found!");
+            }
+        }
         
         function checkFootCollision(kickerSprite, ballSprite) {
             const footCenterX = kickerSprite.x + kickerSprite.width / 2;
@@ -541,11 +822,20 @@
         }
         
         function initGame() {
+            try {
+                loadPlayerStats();
+            } catch (e) {
+                console.error("Error loading player stats:", e);
+            }
+            
             resizeCanvas();
             document.getElementById('instructions').textContent = 'Drag the kicker to the ball to shoot!';
             updateGameInfo();
             ballStartPosition = { x: sprites.ball.x, y: sprites.ball.y };
             keeperOriginalY = sprites.keeper.y;
+            
+            initSkinSystem();
+            
             gameLoop();
         }
         
@@ -628,6 +918,14 @@
                     scoreA++;
                     document.getElementById('scoreA').textContent = scoreA;
                     console.log('Player scored!');
+                    
+                    try {
+                        playerStats.totalGoals++;
+                        savePlayerStats();
+                        checkUnlocks();
+                    } catch (e) {
+                        console.error("Error updating player stats:", e);
+                    }
                 } else if (gameState === 'TEAM_A_GK') {
                     scoreB++;
                     document.getElementById('scoreB').textContent = scoreB;
@@ -640,6 +938,13 @@
             if (checkCollision(ball, keeper)) {
                 ballInMotion = false;
                 console.log('Goalkeeper saved the ball!');
+                
+                if (gameState === 'TEAM_A_GK') {
+                    playerStats.totalSaves++;
+                    savePlayerStats();
+                    checkUnlocks();
+                }
+                
                 nextTurn();
                 return;
             }
@@ -649,6 +954,20 @@
                 ballInMotion = false;
                 console.log('Ball went out of bounds!');
                 nextTurn();
+            }
+        }
+        
+        function checkUnlocks() {
+            const newUnlocks = skins.filter(skin => 
+                playerStats.totalGoals >= skin.requirement && 
+                !localStorage.getItem(`skin_${skin.id}_unlocked`)
+            );
+            
+            if (newUnlocks.length > 0) {
+                newUnlocks.forEach(skin => {
+                    localStorage.setItem(`skin_${skin.id}_unlocked`, 'true');
+                    alert(`🎉 New skin unlocked: ${skin.name}! 🎉`);
+                });
             }
         }
         
@@ -770,8 +1089,98 @@
                 console.log('Hitboxes:', showHitboxes ? 'ON' : 'OFF');
             }
         });
-        
-        loadImages();
+        canvas.addEventListener('touchstart', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const touch = e.touches[0];
+            const mouseX = touch.clientX - rect.left;
+            const mouseY = touch.clientY - rect.top;
+
+            if (ballInMotion) return;
+
+            if (gameState === 'TEAM_A_KICK') {
+                if (mouseX >= kicker.x && mouseX <= kicker.x + kicker.width &&
+                    mouseY >= kicker.y && mouseY <= kicker.y + kicker.height) {
+                    isDragging = true;
+                    dragObject = 'kicker';
+                    dragStart = { x: mouseX, y: mouseY };
+                }
+            } else if (gameState === 'TEAM_A_GK') {
+                if (mouseX >= keeper.x && mouseX <= keeper.x + keeper.width &&
+                    mouseY >= keeper.y && mouseY <= keeper.y + keeper.height) {
+                    isDragging = true;
+                    dragObject = 'keeper';
+                    dragStart = { x: mouseX, y: mouseY };
+                    playerKeeperStartY = keeper.y;
+                }
+            }
+            e.preventDefault();
+        }, { passive: false });
+
+        canvas.addEventListener('touchmove', (e) => {
+            if (!isDragging) return;
+            const rect = canvas.getBoundingClientRect();
+            const touch = e.touches[0];
+            const mouseX = touch.clientX - rect.left;
+            const mouseY = touch.clientY - rect.top;
+
+            if (dragObject === 'kicker') {
+                kicker.x = mouseX - kicker.width / 2;
+                kicker.y = mouseY - kicker.height / 2;
+
+                if (!ballInMotion && checkFootCollision(kicker, ball)) {
+                    kickBall();
+                    kicker.x = sprites.kicker.x;
+                    kicker.y = sprites.kicker.y;
+                    isDragging = false;
+                    dragObject = null;
+                }
+            } else if (dragObject === 'keeper') {
+                const minX = sprites.goal.x - 150;
+                const maxX = sprites.goal.x + sprites.goal.width + 150 - keeper.width;
+                const minY = sprites.goal.y - 100;
+                const maxY = sprites.goal.y + sprites.goal.height + 100 - keeper.height;
+
+                keeper.x = Math.max(minX, Math.min(mouseX - keeper.width / 2, maxX));
+                keeper.y = Math.max(minY, Math.min(mouseY - keeper.height / 2, maxY));
+
+                if (!keeperHasDived && gameState === 'TEAM_A_GK') {
+                    const yMovement = keeper.y - playerKeeperStartY;
+                    if (yMovement > diveThreshold) {
+                        keeperDiving = true;
+                        keeperHasDived = true;
+                        const goalCenterX = sprites.goal.x + sprites.goal.width / 2;
+                        const keeperCenterX = keeper.x + keeper.width / 2;
+                        if (keeperCenterX < goalCenterX - 30) {
+                            keeperRotation = -Math.PI / 2;
+                        } else if (keeperCenterX > goalCenterX + 30) {
+                            keeperRotation = Math.PI / 2;
+                        } else {
+                            keeperRotation = 0;
+                        }
+                    }
+                }
+            }
+            e.preventDefault();
+        }, { passive: false });
+
+        canvas.addEventListener('touchend', (e) => {
+            if (!isDragging) return;
+            if (dragObject === 'kicker') {
+                kicker.x = sprites.kicker.x;
+                kicker.y = sprites.kicker.y;
+            } else if (dragObject === 'keeper') {
+                keeper.x = sprites.keeper.x;
+                keeper.y = sprites.keeper.y;
+            }
+            isDragging = false;
+            dragObject = null;
+            e.preventDefault();
+        }, { passive: false });
+
+        window.addEventListener('DOMContentLoaded', function() {
+            console.log("DOM fully loaded, starting game initialization");
+            loadImages();
+        });
     </script>
 </body>
 </html>
